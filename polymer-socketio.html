@@ -1,0 +1,263 @@
+<link rel="import" href="../polymer/polymer.html">
+<script src="../socket.io-client/dist/socket.io.js"></script>
+
+<!--
+`polymer-socketio`
+Socket.io client web component
+
+
+-->
+<dom-module id="polymer-socketio">
+  <template>
+    <style>
+      :host {
+        display: none;
+      }
+    </style>
+    <content></content>
+  </template>
+
+  <script>
+    Polymer({
+        is: 'polymer-socketio',
+        
+        properties: {
+          url: {
+              type: String
+          },
+          connected: {
+              type: Boolean,
+              notify: true,
+              value: false
+          },
+          status: {
+              type: String,
+              notify: true,
+              value: "NONE"
+          },
+          error: {
+              type: Object,
+              notify: true,
+              value: "NONE"
+          },
+          token: {
+              type: String
+          },
+          auto: {
+              type: Boolean,
+              value: false
+          },
+          secure: {
+              type: Boolean,
+              value: false
+          }
+        }, 
+                
+        _socket: null,
+        
+        _emitters: {},
+        
+        _receivers: {},
+        
+        _promise: null,
+        
+        initialize: function(){
+            
+            if(this._promise == null){
+                
+                var errorevt = function(error){
+                    this._setControlStateInfo("error", false, error, true );
+                }.bind(this);
+
+                var disconnectevt = function(){
+                    this._setControlStateInfo("disconnected", false, null, true);
+                }.bind(this);
+
+                var reconnctingevt = function(){
+                    this._setControlStateInfo("reconnecting", false, null, true);
+                }.bind(this);
+
+
+                this._promise = new Promise(function(resolve, reject){
+
+                    var ready = function(){
+                        this._setControlStateInfo("connected", true, null, true);
+                        resolve('authorized');
+                    }.bind(this);
+
+                    var connected = function(){
+
+                        if(this.secure){
+
+                            this.socket.emit("authenticate", {token: this.token});
+                            this.socket.on("authenticated", ready);
+                            this.socket.on("unauthorized",function(){
+                                this._setControlStateInfo("error", false, "unauthorized", false );
+                                reject('unauthorized');
+                            }.bind(this));
+                        }else{
+                            ready();
+                        }
+                    }.bind(this);
+
+                    this.socket = io.connect(this.url);
+                    this.socket.on("connect", connected);
+                    this.socket.on("disconnect", disconnectevt);
+                    this.socket.on("reconnect", connected);
+                    this.socket.on("reconnecting", reconnctingevt);
+                    this.socket.on("error", errorevt);
+                    this.socket.on("reconnect_error", errorevt);
+
+                }.bind(this));
+            }
+
+            return this._promise;
+        },
+
+        addEmitter: function(receive, broadcast, enabled){
+            if(!this._emitters[broadcast]){
+
+                var enable = function(){
+                    //register a local event to receive on and broadcast on socket when fired
+                    document.addEventListener(receive, function (e) {
+                        if(this.connected){
+                            this.socket.emit(broadcast, e.detail);
+                        }
+                    }.bind(this));
+
+                }.bind(this);
+
+                var disable = function(){
+                    document.removeEventListener(receive);
+                }.bind(this);
+
+                //Add an item to the emitters object to keep multiple registrations from occurring
+                this._emitters[broadcast] = {receive: receive, broadcast: broadcast, active: false, enable:enable, disable: disable};
+
+                if(enabled){
+                    this.enableEmitter(broadcast)
+                }
+            }
+        },
+
+        enableEmitter: function(broadcast){
+            if(this._emitters[broadcast] && !this._emitters[broadcast].active){
+                this._emitters[broadcast].active = true;
+                this._emitters[broadcast].enable();
+            }
+        },
+
+        disableEmitter: function(broadcast){
+            if(this._emitters[broadcast] && this._emitters[broadcast].active){
+                this._emitters[broadcast].active = false;
+                this._emitters[broadcast].disable();
+            }
+        },
+        
+        removeEmitter: function(broadcast){
+            if(this._emitters[broadcast]){
+                if(this._emitters[broadcast].active) this.disableEmitter(broadcast);
+                delete this._emitters[broadcast];
+            }
+        },
+
+        addReceiver: function(receive, broadcast, enabled){
+            if(!this._receivers[receive]) {
+
+                var enable = function () {
+                    if (this._receivers[receive]) {
+                        this._receivers[receive].active = true;
+                    }
+                }.bind(this);
+
+                var disable = function () {
+                    if (this._receivers[receive]) {
+                        this._receivers[receive].active = false;
+                    }
+                }.bind(this);
+
+                this._receivers[receive] = {event: receive, broadcast: broadcast, active: false, enable: enable, disable: disable};
+
+                this._setSocketListen(receive);
+
+                if(enabled) this._receivers[receive].enable();
+            }
+        },
+
+        enableReceiver: function(receive){
+            if(this._receivers[receive]) this._receivers[receive].enable();
+        },
+
+        disableReceiver: function(receive){
+            if(this._receivers[receive]) this._receivers[receive].disable();
+        },
+
+        removeReceiver: function(receive){
+            if(this._receivers[receive]){
+                this._receivers[receive].disable();
+                delete this._receivers[receive];
+            }
+        },
+
+        close: function(){
+            this._unregisterEvents();
+            if(this.connected){
+                this.socket.close();
+                this.socket.destroy();
+                this.socket = null;
+            }
+        },
+
+        fireConnectionStateChange: function(){
+            var eventdata = {status: this.status, connected: this.connected};
+            this.fire('socketStateChange', eventdata);
+        },
+
+
+        detached: function(){
+            this.close();
+        },
+
+        ready: function(){
+            if(this.auto){
+                this.initialize();
+            }
+        },
+
+        _setSocketListen: function(listen){
+            this.socket.on(listen, function(data){
+                if(this._receivers[listen] && this._receivers[listen].active) {
+                    var emit = this._receivers[listen].emit;
+                    this._fireMessageEvent(emit, data);
+                }
+            }.bind(this));
+        },
+
+        _fireMessageEvent: function(evt, data){
+            this.fire(evt, data);
+        },
+
+        _setControlStateInfo: function( status, connected, error, fireStateChange){
+            this.status = status;
+            this.connected = connected;
+            this.error = error;
+
+            if(fireStateChange) this.fireConnectionStateChange();
+        },
+
+        _unregisterEvents: function(){
+            for(var e in this._emitters){
+                if(this._emitters.hasOwnProperty(e)){
+                    this.removeEmitter(e);
+                }
+            }
+
+            for(var r in this._receivers){
+                if(this._receivers.hasOwnProperty(r)){
+                    this.removeReceiver(r)
+                }
+            }
+        }
+    });
+  </script>
+</dom-module>
