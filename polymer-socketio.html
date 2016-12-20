@@ -4,8 +4,6 @@
 <!--
 `polymer-socketio`
 Socket.io client web component
-
-
 -->
 <dom-module id="polymer-socketio">
   <template>
@@ -33,12 +31,12 @@ Socket.io client web component
           status: {
               type: String,
               notify: true,
-              value: "NONE"
+              value: ""
           },
           error: {
               type: Object,
               notify: true,
-              value: "NONE"
+              value: {}
           },
           token: {
               type: String
@@ -89,9 +87,9 @@ Socket.io client web component
 
                         if(this.secure){
 
-                            this.socket.emit("authenticate", {token: this.token});
-                            this.socket.on("authenticated", ready);
-                            this.socket.on("unauthorized",function(){
+                            this._socket.emit("authenticate", {token: this.token});
+                            this._socket.on("authenticated", ready);
+                            this._socket.on("unauthorized",function(){
                                 this._setControlStateInfo("error", false, "unauthorized", false );
                                 reject('unauthorized');
                             }.bind(this));
@@ -100,13 +98,13 @@ Socket.io client web component
                         }
                     }.bind(this);
 
-                    this.socket = io.connect(this.url);
-                    this.socket.on("connect", connected);
-                    this.socket.on("disconnect", disconnectevt);
-                    this.socket.on("reconnect", connected);
-                    this.socket.on("reconnecting", reconnctingevt);
-                    this.socket.on("error", errorevt);
-                    this.socket.on("reconnect_error", errorevt);
+                    this._socket = io.connect(this.url);
+                    this._socket.on("connect", connected);
+                    this._socket.on("disconnect", disconnectevt);
+                    this._socket.on("reconnect", connected);
+                    this._socket.on("reconnecting", reconnctingevt);
+                    this._socket.on("error", errorevt);
+                    this._socket.on("reconnect_error", errorevt);
 
                 }.bind(this));
             }
@@ -118,10 +116,9 @@ Socket.io client web component
             if(!this._emitters[broadcast]){
 
                 var enable = function(){
-                    //register a local event to receive on and broadcast on socket when fired
                     document.addEventListener(receive, function (e) {
                         if(this.connected){
-                            this.socket.emit(broadcast, e.detail);
+                            this._socket.emit(broadcast, e.detail);
                         }
                     }.bind(this));
 
@@ -131,7 +128,6 @@ Socket.io client web component
                     document.removeEventListener(receive);
                 }.bind(this);
 
-                //Add an item to the emitters object to keep multiple registrations from occurring
                 this._emitters[broadcast] = {receive: receive, broadcast: broadcast, active: false, enable:enable, disable: disable};
 
                 if(enabled){
@@ -167,18 +163,23 @@ Socket.io client web component
                 var enable = function () {
                     if (this._receivers[receive]) {
                         this._receivers[receive].active = true;
+                        this._socket.on(receive, function(data){
+                            if(this._receivers[receive] && this._receivers[receive].active) {
+                                var emit = this._receivers[receive].emit;
+                                this.fire(emit, data);
+                            }
+                        }.bind(this));
                     }
                 }.bind(this);
 
                 var disable = function () {
                     if (this._receivers[receive]) {
                         this._receivers[receive].active = false;
+                        this._socket.off(receive);
                     }
                 }.bind(this);
 
-                this._receivers[receive] = {event: receive, broadcast: broadcast, active: false, enable: enable, disable: disable};
-
-                this._setSocketListen(receive);
+                this._receivers[receive] = {receive: receive, broadcast: broadcast, active: false, enable: enable, disable: disable};
 
                 if(enabled) this._receivers[receive].enable();
             }
@@ -202,17 +203,11 @@ Socket.io client web component
         close: function(){
             this._unregisterEvents();
             if(this.connected){
-                this.socket.close();
-                this.socket.destroy();
-                this.socket = null;
+                this._socket.close();
+                this._socket.destroy();
+                this._socket = null;
             }
         },
-
-        fireConnectionStateChange: function(){
-            var eventdata = {status: this.status, connected: this.connected};
-            this.fire('socketStateChange', eventdata);
-        },
-
 
         detached: function(){
             this.close();
@@ -224,25 +219,13 @@ Socket.io client web component
             }
         },
 
-        _setSocketListen: function(listen){
-            this.socket.on(listen, function(data){
-                if(this._receivers[listen] && this._receivers[listen].active) {
-                    var emit = this._receivers[listen].emit;
-                    this._fireMessageEvent(emit, data);
-                }
-            }.bind(this));
-        },
-
-        _fireMessageEvent: function(evt, data){
-            this.fire(evt, data);
-        },
-
         _setControlStateInfo: function( status, connected, error, fireStateChange){
             this.status = status;
             this.connected = connected;
             this.error = error;
 
-            if(fireStateChange) this.fireConnectionStateChange();
+            if(fireStateChange)
+                this.fire('socketStateChange', {status: this.status, connected: this.connected});
         },
 
         _unregisterEvents: function(){
