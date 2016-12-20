@@ -13,13 +13,8 @@
         Polymer({
             is: 'polymer-socketio-binding',
             properties:{
-                receive:{
+                eventSelector:{
                     type: String,
-                    value: ""
-                },
-                broadcast:{
-                    type: String,
-                    value: ""
                 },
                 input:{
                     type: object,
@@ -31,22 +26,49 @@
                     notify: true
                 }
             },
+            _eventNode : null,
+            _promise : null,
 
             _inputChange: function(){
                 if(this.broadcast.trim().length > 0)
                     this.fire(this.broadcast, this.input);
             },
 
-            attached: function(){
-                if(this.receive.trim().length > 0)
-                    document.addEventListener(this.receive, function(e){
-                        this.output = e.detail;
+            _initialize: function(){
+                if(!this._promise)
+                    this._promise = new Promise(function(resolve, reject){
+                        var eventNode = Polymer.dom(this.root).querySelector(this.eventSelector);
+                        if(eventNode){
+                            this._eventNode = eventNode;
+                            resolve();
+                        }else{
+                            reject();
+                        }
                     }.bind(this));
+
+                return this._promise;
+            },
+
+            ready: function(){
+                this._initialize();
+            },
+
+            attached: function(){
+                this._initialize().then(function(){
+                    if(this.receive.trim().length > 0) {
+                        document.addEventListener(this.receive, function (e) {
+                            this.output = e.detail;
+                        }.bind(this));
+                    }
+                }.bind(this));
             },
 
             detached: function(){
-                if(this.receive.trim().length > 0)
-                    document.removeEventListener(this.receive);
+                this._initialize().then(function(){
+                    if(this.receive.trim().length > 0) {
+                        document.removeEventListener(this.receive);
+                    }
+                }.bind(this));
             }
         });
     </script>
