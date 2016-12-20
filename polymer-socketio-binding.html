@@ -13,18 +13,40 @@
         Polymer({
             is: 'polymer-socketio-binding',
             properties:{
-                data:{
-                    type: object,
-                    notify: true,
-                },
                 receive:{
                     type: String,
-                    value:"default"
+                    value: ""
                 },
                 broadcast:{
                     type: String,
-                    value: "default"
+                    value: ""
+                },
+                input:{
+                    type: object,
+                    notify: true,
+                    observer: "_inputChange"
+                },
+                output:{
+                    type: object,
+                    notify: true
                 }
+            },
+
+            _inputChange: function(){
+                if(this.broadcast.trim().length > 0)
+                    this.fire(this.broadcast, this.input);
+            },
+
+            attached: function(){
+                if(this.receive.trim().length > 0)
+                    document.addEventListener(this.receive, function(e){
+                        this.output = e.detail;
+                    }.bind(this));
+            },
+
+            detached: function(){
+                if(this.receive.trim().length > 0)
+                    document.removeEventListener(this.receive);
             }
         });
     </script>
