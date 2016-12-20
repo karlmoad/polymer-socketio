@@ -30,8 +30,10 @@
             _promise : null,
 
             _inputChange: function(){
-                if(this.broadcast.trim().length > 0)
-                    this.fire(this.broadcast, this.input);
+                this._initialize().then(function(){
+                    if(this._eventNode.emitter)
+                        this.fire(this._eventNode.receive, this.input);
+                }.bind(this));
             },
 
             _initialize: function(){
@@ -55,8 +57,8 @@
 
             attached: function(){
                 this._initialize().then(function(){
-                    if(this.receive.trim().length > 0) {
-                        document.addEventListener(this.receive, function (e) {
+                    if(this._eventNode.receiver) {
+                        document.addEventListener(this._eventNode.broadcast, function (e) {
                             this.output = e.detail;
                         }.bind(this));
                     }
@@ -65,8 +67,8 @@
 
             detached: function(){
                 this._initialize().then(function(){
-                    if(this.receive.trim().length > 0) {
-                        document.removeEventListener(this.receive);
+                    if(this._eventNode.receiver) {
+                        document.removeEventListener(this._eventNode.broadcast);
                     }
                 }.bind(this));
             }
